@@ -1,0 +1,12 @@
+[package]
+name = "udf"
+version = "0.1.0"
+authors = ["glenng"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+
+[build-dependencies]
+bindgen = "0.42.1"
