@@ -19,7 +19,14 @@ struct UdfArgsIter<'a> {
 impl<'a> Iterator for UdfArgsIter<'a> {
 	type Item = UdfArg<'a>;
 	fn next(&mut self) -> Option<Self::Item> {
-		return None;
+		use std::fs::OpenOptions;
+		use std::io::Write;
+		let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+			.append(true)
+            .open("/tmp/udf.log").unwrap();
+		write!(&mut file, "idx: {}, arg_count: {}", self.idx, self.udf_args.arg_count);
 		let output = if self.idx < self.udf_args.arg_count {
 			let idx = self.idx as isize;
 			Some(UdfArg {
@@ -44,7 +51,7 @@ pub extern "C" fn testudf_init(initid: UDF_INIT, mut args: UDF_ARGS, msg: *mut s
 
 #[no_mangle]
 pub extern "C" fn testudf(initid: UDF_INIT, mut args: UDF_ARGS, is_null: *mut std::os::raw::c_char, error: *mut std::os::raw::c_char) -> std::os::raw::c_longlong {
-	let args = UdfArgsIter{idx: 0, udf_args: &mut args};
+	let mut args = UdfArgsIter{idx: 0, udf_args: &mut args};
 	args.count() as ::std::os::raw::c_longlong
 }
 
