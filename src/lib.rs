@@ -26,7 +26,7 @@ impl<'a> Iterator for UdfArgsIter<'a> {
             .create(true)
 			.append(true)
             .open("/tmp/udf.log").unwrap();
-		write!(&mut file, "idx: {}, arg_count: {}", self.idx, self.udf_args.arg_count);
+		write!(&mut file, "idx: {}, arg_count: {}\n", self.idx, self.udf_args.arg_count);
 		let output = if self.idx < self.udf_args.arg_count {
 			let idx = self.idx as isize;
 			Some(UdfArg {
@@ -50,8 +50,8 @@ pub extern "C" fn testudf_init(initid: UDF_INIT, mut args: UDF_ARGS, msg: *mut s
 }
 
 #[no_mangle]
-pub extern "C" fn testudf(initid: UDF_INIT, mut args: UDF_ARGS, is_null: *mut std::os::raw::c_char, error: *mut std::os::raw::c_char) -> std::os::raw::c_longlong {
-	let mut args = UdfArgsIter{idx: 0, udf_args: &mut args};
+pub extern "C" fn testudf(initid: *mut UDF_INIT, args: *mut UDF_ARGS, is_null: *mut std::os::raw::c_char, error: *mut std::os::raw::c_char) -> std::os::raw::c_longlong {
+	let mut args = UdfArgsIter{idx: 0, udf_args: unsafe {&mut *args}};
 	args.count() as ::std::os::raw::c_longlong
 }
 
