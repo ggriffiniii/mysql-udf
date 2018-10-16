@@ -212,7 +212,7 @@ pub extern "C" fn argcount_deinit(initid: *mut UDF_INIT) {
 	writeln!(&debug_file(), "argcount_deinit");
 	let initid: &mut UDF_INIT = unsafe {&mut *initid};
 	writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
-	let owned = unsafe { Box::from_raw(initid.ptr); };
+	let owned = unsafe { Box::from_raw(initid.ptr as *mut ArgCount); };
 	writeln!(&debug_file(), "owned: {:?}", owned);
 }
 
