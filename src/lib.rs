@@ -4,6 +4,11 @@
 extern crate libc;
 mod mysql_bindings;
 use mysql_bindings::*;
+use std::io::Write;
+
+fn debug_file() -> ::std::fs::File {
+	::std::fs::OpenOptions::new().append(true).open("/tmp/debug.log").unwrap()
+}
 
 struct UdfInit<'a> {
 	udf_init: &'a mut UDF_INIT,
@@ -148,16 +153,19 @@ impl UDF for ArgCount {
 	type Output = ::std::os::raw::c_longlong;
 
 	fn new(init: &mut UdfInit, mut init_args: InitUdfArgsIter) -> Result<Self, String> {
+		writeln!(&debug_file(), "creating new argcount");
 		Ok(ArgCount)
 	}
 
 	fn process_row(&self, mut args: RowUdfArgsIter) -> Result<Self::Output, ()> {
+		writeln!(&debug_file(), "argcount is processing row");
 		Ok(args.count() as Self::Output)
 	}
 }
 
 #[no_mangle]
 pub extern "C" fn argcount_init(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, msg: *mut std::os::raw::c_char) -> my_bool {
+	writeln!(&debug_file(), "argcount_init");
 	let initid: &mut UDF_INIT = unsafe {&mut *initid};
 	let args = unsafe { &mut *args };
 	let args_iter = args.init_args_iter_mut();
@@ -173,7 +181,9 @@ pub extern "C" fn argcount_init(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, 
 		},
 		Ok(argcount) => {
 			let argcount = Box::new(argcount);
-			initid.ptr = Box::into_raw(argcount) as *mut ::std::os::raw::c_char;
+			let raw_argcount = Box::into_raw(argcount) as *mut ::std::os::raw::c_char;
+			writeln!(&debug_file(), "argcount_pointer: {:?}", raw_argcount);
+			initid.ptr = raw_argcount;
 			0
 		}
 	}
@@ -181,8 +191,11 @@ pub extern "C" fn argcount_init(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, 
 
 #[no_mangle]
 pub extern "C" fn argcount(initid: *mut UDF_INIT, args: *mut UDF_ARGS, is_null: *mut std::os::raw::c_char, error: *mut std::os::raw::c_char) -> std::os::raw::c_longlong {
+	writeln!(&debug_file(), "argcount");
 	let args = unsafe { &mut *args };
-	let udf = unsafe { &mut *((*initid).ptr as *mut ArgCount) };
+	let initid: &mut UDF_INIT = unsafe { &mut *initid };
+	writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
+	let udf = unsafe { &mut *(initid.ptr as *mut ArgCount) };
 	match udf.process_row(args.row_args_iter_mut()) {
 		Err(_) => {
 			unsafe { *error = 1 };
@@ -196,7 +209,9 @@ pub extern "C" fn argcount(initid: *mut UDF_INIT, args: *mut UDF_ARGS, is_null: 
 
 #[no_mangle]
 pub extern "C" fn argcount_deinit(initid: *mut UDF_INIT) {
+	writeln!(&debug_file(), "argcount_deinit");
 	let initid: &mut UDF_INIT = unsafe {&mut *initid};
+	writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
 	unsafe { Box::from_raw(initid.ptr); }
 }
 
