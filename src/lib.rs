@@ -7,7 +7,7 @@ use mysql_bindings::*;
 use std::io::Write;
 
 fn debug_file() -> ::std::fs::File {
-	::std::fs::OpenOptions::new().append(true).open("/tmp/debug.log").unwrap()
+	::std::fs::OpenOptions::new().create(true).append(true).open("/tmp/debug.log").unwrap()
 }
 
 struct UdfInit<'a> {
