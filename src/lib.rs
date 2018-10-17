@@ -163,63 +163,143 @@ impl UDF for ArgCount {
 	}
 }
 
-#[no_mangle]
-pub extern "C" fn argcount_init(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, msg: *mut std::os::raw::c_char) -> my_bool {
-	writeln!(&debug_file(), "argcount_init");
-	let initid: &mut UDF_INIT = unsafe {&mut *initid};
-	let args = unsafe { &mut *args };
-	let args_iter = args.init_args_iter_mut();
-	let argcount = ArgCount::new(&mut UdfInit{udf_init: unsafe {&mut *initid}}, args_iter);
-	match argcount {
-		Err(err_msg) => {
-			let len = ::std::cmp::min(80, err_msg.len());  // TODO(use mysql constant rather than 80)
-			let err_msg = ::std::ffi::CString::new(&err_msg[..len]).unwrap();
-			unsafe {
-				libc::strcpy(msg, err_msg.as_ptr());
+macro_rules! create_init_fn {
+	($name:expr, $ty:ty) => {
+		#[no_mangle]
+		#[export_name = $name]
+		pub extern "C" fn init(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, msg: *mut std::os::raw::c_char) -> my_bool {
+			writeln!(&debug_file(), "argcount_init");
+			let initid: &mut UDF_INIT = unsafe {&mut *initid};
+			let args = unsafe { &mut *args };
+			let args_iter = args.init_args_iter_mut();
+			let udf = <$ty as UDF>::new(&mut UdfInit{udf_init: unsafe {&mut *initid}}, args_iter);
+			match udf {
+				Err(err_msg) => {
+					let len = ::std::cmp::min(80, err_msg.len());  // TODO(use mysql constant rather than 80)
+					let err_msg = ::std::ffi::CString::new(&err_msg[..len]).unwrap();
+					unsafe {
+						libc::strcpy(msg, err_msg.as_ptr());
+					}
+					1
+				},
+				Ok(udf) => {
+					let udf = Box::new(udf);
+					let raw_udf = Box::into_raw(udf) as *mut ::std::os::raw::c_char;
+					writeln!(&debug_file(), "argcount_pointer: {:?}", raw_udf);
+					initid.ptr = raw_udf;
+					0
+				}
 			}
-			1
-		},
-		Ok(argcount) => {
-			let argcount = Box::new(argcount);
-			let raw_argcount = Box::into_raw(argcount) as *mut ::std::os::raw::c_char;
-			writeln!(&debug_file(), "argcount_pointer: {:?}", raw_argcount);
-			initid.ptr = raw_argcount;
-			0
 		}
 	}
 }
 
-#[no_mangle]
-pub extern "C" fn argcount(initid: *mut UDF_INIT, args: *mut UDF_ARGS, is_null: *mut std::os::raw::c_char, error: *mut std::os::raw::c_char) -> std::os::raw::c_longlong {
-	writeln!(&debug_file(), "argcount");
-	let args = unsafe { &mut *args };
-	let initid: &mut UDF_INIT = unsafe { &mut *initid };
-	writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
-	let udf = unsafe { &mut *(initid.ptr as *mut ArgCount) };
-	match udf.process_row(args.row_args_iter_mut()) {
-		Err(_) => {
-			unsafe { *error = 1 };
-			0
+macro_rules! create_process_row_fn {
+	($name:expr, $ty:ty) => {
+		#[no_mangle]
+		#[export_name = $name]
+		pub extern "C" fn process_row(initid: *mut UDF_INIT, args: *mut UDF_ARGS, is_null: *mut std::os::raw::c_char, error: *mut std::os::raw::c_char) -> std::os::raw::c_longlong {
+			writeln!(&debug_file(), "argcount");
+			let args = unsafe { &mut *args };
+			let initid: &mut UDF_INIT = unsafe { &mut *initid };
+			writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
+			let udf = unsafe { &mut *(initid.ptr as *mut $ty) };
+			match udf.process_row(args.row_args_iter_mut()) {
+				Err(_) => {
+					unsafe { *error = 1 };
+					0
+				}
+				Ok(result) => {
+					result
+				}
+			}
 		}
-		Ok(result) => {
-			result
+	}
+
+}
+
+macro_rules! create_deinit_fn {
+	($name:expr, $ty:ty) => {
+		#[no_mangle]
+		#[export_name = $name]
+		pub extern "C" fn deinit(initid: *mut UDF_INIT) {
+			writeln!(&debug_file(), "argcount_deinit");
+			let initid: &mut UDF_INIT = unsafe {&mut *initid};
+			writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
+			let owned = unsafe { Box::from_raw(initid.ptr as *mut $ty); };
+			writeln!(&debug_file(), "owned: {:?}", owned);
 		}
 	}
 }
 
-#[no_mangle]
-pub extern "C" fn argcount_deinit(initid: *mut UDF_INIT) {
-	writeln!(&debug_file(), "argcount_deinit");
-	let initid: &mut UDF_INIT = unsafe {&mut *initid};
-	writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
-	let owned = unsafe { Box::from_raw(initid.ptr as *mut ArgCount); };
-	writeln!(&debug_file(), "owned: {:?}", owned);
+macro_rules! create_udf {
+	($name:ident, $ty:ty) => {
+		pub mod $name {
+			use super::*;
+			create_init_fn!(concat!(stringify!($name), "_init"), $ty);
+			create_process_row_fn!(stringify!($name), $ty);
+			create_deinit_fn!(concat!(stringify!($name), "_deinit"), $ty);
+		}
+	}
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
+create_udf!(new_argcount, ArgCount);
+
+pub mod argcount {
+	use super::*;
+	#[no_mangle]
+	#[export_name = "argcount_init"]
+	pub extern "C" fn init(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, msg: *mut std::os::raw::c_char) -> my_bool {
+		writeln!(&debug_file(), "argcount_init");
+		let initid: &mut UDF_INIT = unsafe {&mut *initid};
+		let args = unsafe { &mut *args };
+		let args_iter = args.init_args_iter_mut();
+		let argcount = ArgCount::new(&mut UdfInit{udf_init: unsafe {&mut *initid}}, args_iter);
+		match argcount {
+			Err(err_msg) => {
+				let len = ::std::cmp::min(80, err_msg.len());  // TODO(use mysql constant rather than 80)
+				let err_msg = ::std::ffi::CString::new(&err_msg[..len]).unwrap();
+				unsafe {
+					libc::strcpy(msg, err_msg.as_ptr());
+				}
+				1
+			},
+			Ok(argcount) => {
+				let argcount = Box::new(argcount);
+				let raw_argcount = Box::into_raw(argcount) as *mut ::std::os::raw::c_char;
+				writeln!(&debug_file(), "argcount_pointer: {:?}", raw_argcount);
+				initid.ptr = raw_argcount;
+				0
+			}
+		}
+	}
+
+	#[no_mangle]
+	#[export_name = "argcount"]
+	pub extern "C" fn process_row(initid: *mut UDF_INIT, args: *mut UDF_ARGS, is_null: *mut std::os::raw::c_char, error: *mut std::os::raw::c_char) -> std::os::raw::c_longlong {
+		writeln!(&debug_file(), "argcount");
+		let args = unsafe { &mut *args };
+		let initid: &mut UDF_INIT = unsafe { &mut *initid };
+		writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
+		let udf = unsafe { &mut *(initid.ptr as *mut ArgCount) };
+		match udf.process_row(args.row_args_iter_mut()) {
+			Err(_) => {
+				unsafe { *error = 1 };
+				0
+			}
+			Ok(result) => {
+				result
+			}
+		}
+	}
+
+	#[no_mangle]
+	#[export_name = "argcount_deinit"]
+	pub extern "C" fn deinit(initid: *mut UDF_INIT) {
+		writeln!(&debug_file(), "argcount_deinit");
+		let initid: &mut UDF_INIT = unsafe {&mut *initid};
+		writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
+		let owned = unsafe { Box::from_raw(initid.ptr as *mut ArgCount); };
+		writeln!(&debug_file(), "owned: {:?}", owned);
+	}
 }
