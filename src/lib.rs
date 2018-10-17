@@ -167,6 +167,12 @@ struct Add;
 impl UDF for Add {
 	type Output = ::std::os::raw::c_longlong;
 	fn new(init: &mut UdfInit, mut init_args: InitUdfArgsIter) -> Result<Self, String> {
+		for (idx, arg) in init_args.enumerate() {
+			match arg.arg_value() {
+				ArgValue::Int(_) => {},
+				_ => return Err(format!("Add only accepts integer values. Arg {} is not an integer", idx)),
+			};
+		}
 		writeln!(&debug_file(), "creating new argcount");
 		Ok(Add)
 	}
