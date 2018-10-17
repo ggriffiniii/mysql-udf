@@ -154,12 +154,10 @@ impl UDF for ArgCount {
 	type Output = c_longlong;
 
 	fn new(init: &mut UdfInit, mut init_args: InitUdfArgsIter) -> Result<Self, String> {
-		writeln!(&debug_file(), "creating new argcount");
 		Ok(ArgCount)
 	}
 
 	fn process_row(&self, mut args: RowUdfArgsIter) -> Result<Self::Output, ()> {
-		writeln!(&debug_file(), "argcount is processing row");
 		Ok(args.count() as Self::Output)
 	}
 }
@@ -175,7 +173,6 @@ impl UDF for Add {
 				_ => return Err(format!("Add only accepts integer values. Arg {} is not an integer", idx)),
 			};
 		}
-		writeln!(&debug_file(), "creating new argcount");
 		Ok(Add)
 	}
 
@@ -199,10 +196,9 @@ impl UDF for AddF {
 			match arg.arg_value() {
 				ArgValue::Int(_) => {},
 				ArgValue::Real(_) => {},
-				_ => return Err(format!("Add only accepts integer values. Arg {} is not an integer", idx)),
+				_ => return Err(format!("Add only accepts integer or real values. Arg {} is not an integer", idx)),
 			};
 		}
-		writeln!(&debug_file(), "creating new argcount");
 		Ok(AddF)
 	}
 
@@ -220,7 +216,6 @@ impl UDF for AddF {
 }
 
 fn init<T: UDF>(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, msg: *mut c_char) -> my_bool {
-	writeln!(&debug_file(), "argcount_init");
 	let initid: &mut UDF_INIT = unsafe {&mut *initid};
 	let args = unsafe { &mut *args };
 	let args_iter = args.init_args_iter_mut();
@@ -237,7 +232,6 @@ fn init<T: UDF>(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, msg: *mut c_char
 		Ok(udf) => {
 			let udf = Box::new(udf);
 			let raw_udf = Box::into_raw(udf) as *mut c_char;
-			writeln!(&debug_file(), "argcount_pointer: {:?}", raw_udf);
 			initid.ptr = raw_udf;
 			0
 		}
@@ -250,10 +244,8 @@ where
 	T::Output: Into<R>,
 	R: From<i8>,
 {
-	writeln!(&debug_file(), "argcount");
 	let args = unsafe { &mut *args };
 	let initid: &mut UDF_INIT = unsafe { &mut *initid };
-	writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
 	let udf = unsafe { &mut *(initid.ptr as *mut T) };
 	match udf.process_row(args.row_args_iter_mut()) {
 		Err(_) => {
@@ -267,11 +259,8 @@ where
 }
 
 fn deinit<T: UDF>(initid: *mut UDF_INIT) {
-	writeln!(&debug_file(), "argcount_deinit");
 	let initid: &mut UDF_INIT = unsafe {&mut *initid};
-	writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
 	let owned = unsafe { Box::from_raw(initid.ptr as *mut T); };
-	writeln!(&debug_file(), "owned: {:?}", owned);
 }
 
 macro_rules! create_init_fn {
