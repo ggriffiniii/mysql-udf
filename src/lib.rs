@@ -5,6 +5,7 @@ extern crate libc;
 mod mysql_bindings;
 use mysql_bindings::*;
 use std::io::Write;
+use std::os::raw::{c_char, c_longlong, c_double, c_ulong, c_uint};
 
 fn debug_file() -> ::std::fs::File {
 	::std::fs::OpenOptions::new().create(true).append(true).open("/tmp/debug.log").unwrap()
@@ -16,19 +17,19 @@ struct UdfInit<'a> {
 
 impl<'a> UdfInit<'a> {
 	fn set_maybe_null(&mut self, nullable: bool) {
-		self.udf_init.maybe_null = nullable as ::std::os::raw::c_char;
+		self.udf_init.maybe_null = nullable as c_char;
 	}
 
 	fn set_decimals(&mut self, decimals: u16) {
-		self.udf_init.decimals = decimals as ::std::os::raw::c_uint;
+		self.udf_init.decimals = decimals as c_uint;
 	}
 
 	fn set_max_length(&mut self, max_length: u32) {
-		self.udf_init.max_length = max_length as ::std::os::raw::c_uint;
+		self.udf_init.max_length = max_length as c_uint;
 	}
 
 	fn set_const_item(&mut self, is_const_item: bool) {
-		self.udf_init.const_item = is_const_item as ::std::os::raw::c_char;
+		self.udf_init.const_item = is_const_item as c_char;
 	}
 }
 
@@ -44,8 +45,8 @@ impl UDF_ARGS {
 
 struct RowUdfArg<'a> {
 	arg_type: &'a mut Item_result,
-	arg: *mut std::os::raw::c_char,
-	length: std::os::raw::c_ulong,
+	arg: *mut c_char,
+	length: c_ulong,
 }
 
 impl<'a> RowUdfArg<'a> {
@@ -112,22 +113,22 @@ impl<'a> Iterator for InitUdfArgsIter<'a> {
 
 enum ArgValue<'a> {
 	String(Option<&'a [u8]>),
-	Real(Option<std::os::raw::c_double>),
-	Int(Option<std::os::raw::c_longlong>),
+	Real(Option<c_double>),
+	Int(Option<c_longlong>),
 	Decimal(Option<&'a [u8]>),
 }
 
 impl<'a> ArgValue<'a> {
-	fn new(arg_type: Item_result, arg: *mut std::os::raw::c_char, length: std::os::raw::c_ulong) -> ArgValue<'a> {
+	fn new(arg_type: Item_result, arg: *mut c_char, length: c_ulong) -> ArgValue<'a> {
 		match arg_type {
 			Item_result_STRING_RESULT => {
 				ArgValue::String(unsafe { (arg as *const u8).as_ref().map(|arg| unsafe { ::std::slice::from_raw_parts(arg, length as usize) }) })
 			},
 			Item_result_REAL_RESULT => {
-				ArgValue::Real(unsafe { (arg as *const std::os::raw::c_double).as_ref().map(|arg| *arg )})
+				ArgValue::Real(unsafe { (arg as *const c_double).as_ref().map(|arg| *arg )})
 			},
 			Item_result_INT_RESULT => {
-				ArgValue::Int(unsafe { (arg as *const std::os::raw::c_longlong).as_ref().map(|arg| *arg )})
+				ArgValue::Int(unsafe { (arg as *const c_longlong).as_ref().map(|arg| *arg )})
 			},
 			Item_result_DECIMAL_RESULT => {
 				ArgValue::Decimal(unsafe { (arg as *const u8).as_ref().map(|arg| unsafe { ::std::slice::from_raw_parts(arg, length as usize) }) })
@@ -150,7 +151,7 @@ where
 struct ArgCount;
 
 impl UDF for ArgCount {
-	type Output = ::std::os::raw::c_longlong;
+	type Output = c_longlong;
 
 	fn new(init: &mut UdfInit, mut init_args: InitUdfArgsIter) -> Result<Self, String> {
 		writeln!(&debug_file(), "creating new argcount");
@@ -165,7 +166,8 @@ impl UDF for ArgCount {
 
 struct Add;
 impl UDF for Add {
-	type Output = ::std::os::raw::c_longlong;
+	type Output = c_longlong;
+
 	fn new(init: &mut UdfInit, mut init_args: InitUdfArgsIter) -> Result<Self, String> {
 		for (idx, arg) in init_args.enumerate() {
 			match arg.arg_value() {
@@ -189,59 +191,97 @@ impl UDF for Add {
 	}
 }
 
-macro_rules! create_init_fn {
-	($name:expr, $ty:ty) => {
-		#[no_mangle]
-		#[export_name = $name]
-		pub extern "C" fn init(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, msg: *mut std::os::raw::c_char) -> my_bool {
-			writeln!(&debug_file(), "argcount_init");
-			let initid: &mut UDF_INIT = unsafe {&mut *initid};
-			let args = unsafe { &mut *args };
-			let args_iter = args.init_args_iter_mut();
-			let udf = <$ty as UDF>::new(&mut UdfInit{udf_init: unsafe {&mut *initid}}, args_iter);
-			match udf {
-				Err(err_msg) => {
-					let len = ::std::cmp::min(80, err_msg.len());  // TODO(use mysql constant rather than 80)
-					let err_msg = ::std::ffi::CString::new(&err_msg[..len]).unwrap();
-					unsafe {
-						libc::strcpy(msg, err_msg.as_ptr());
-					}
-					1
-				},
-				Ok(udf) => {
-					let udf = Box::new(udf);
-					let raw_udf = Box::into_raw(udf) as *mut ::std::os::raw::c_char;
-					writeln!(&debug_file(), "argcount_pointer: {:?}", raw_udf);
-					initid.ptr = raw_udf;
-					0
-				}
+struct AddF;
+impl UDF for AddF {
+	type Output = f64;
+	fn new(init: &mut UdfInit, mut init_args: InitUdfArgsIter) -> Result<Self, String> {
+		for (idx, arg) in init_args.enumerate() {
+			match arg.arg_value() {
+				ArgValue::Int(_) => {},
+				ArgValue::Real(_) => {},
+				_ => return Err(format!("Add only accepts integer values. Arg {} is not an integer", idx)),
+			};
+		}
+		writeln!(&debug_file(), "creating new argcount");
+		Ok(AddF)
+	}
+
+	fn process_row(&self, mut args: RowUdfArgsIter) -> Result<Self::Output, ()> {
+		let mut total = 0.0;
+		for arg in args {
+			match arg.arg_value() {
+				ArgValue::Int(Some(val)) => total += val as f64,
+				ArgValue::Real(Some(val)) => total += val,
+				_ => {},
 			}
+		}
+		Ok(total)
+	}
+}
+
+fn init<T: UDF>(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, msg: *mut c_char) -> my_bool {
+	writeln!(&debug_file(), "argcount_init");
+	let initid: &mut UDF_INIT = unsafe {&mut *initid};
+	let args = unsafe { &mut *args };
+	let args_iter = args.init_args_iter_mut();
+	let udf = T::new(&mut UdfInit{udf_init: unsafe {&mut *initid}}, args_iter);
+	match udf {
+		Err(err_msg) => {
+			let len = ::std::cmp::min(80, err_msg.len());  // TODO(use mysql constant rather than 80)
+			let err_msg = ::std::ffi::CString::new(&err_msg[..len]).unwrap();
+			unsafe {
+				libc::strcpy(msg, err_msg.as_ptr());
+			}
+			1
+		},
+		Ok(udf) => {
+			let udf = Box::new(udf);
+			let raw_udf = Box::into_raw(udf) as *mut c_char;
+			writeln!(&debug_file(), "argcount_pointer: {:?}", raw_udf);
+			initid.ptr = raw_udf;
+			0
 		}
 	}
 }
 
-macro_rules! create_process_row_fn {
+fn process_row_primitive_return<T, R>(initid: *mut UDF_INIT, args: *mut UDF_ARGS, is_null: *mut c_char, error: *mut c_char) -> R
+where
+	T: UDF,
+	T::Output: Into<R>,
+	R: From<i8>,
+{
+	writeln!(&debug_file(), "argcount");
+	let args = unsafe { &mut *args };
+	let initid: &mut UDF_INIT = unsafe { &mut *initid };
+	writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
+	let udf = unsafe { &mut *(initid.ptr as *mut T) };
+	match udf.process_row(args.row_args_iter_mut()) {
+		Err(_) => {
+			unsafe { *error = 1 };
+			0.into()
+		}
+		Ok(result) => {
+			result.into()
+		}
+	}
+}
+
+fn deinit<T: UDF>(initid: *mut UDF_INIT) {
+	writeln!(&debug_file(), "argcount_deinit");
+	let initid: &mut UDF_INIT = unsafe {&mut *initid};
+	writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
+	let owned = unsafe { Box::from_raw(initid.ptr as *mut T); };
+	writeln!(&debug_file(), "owned: {:?}", owned);
+}
+
+macro_rules! create_init_fn {
 	($name:expr, $ty:ty) => {
 		#[no_mangle]
 		#[export_name = $name]
-		pub extern "C" fn process_row(initid: *mut UDF_INIT, args: *mut UDF_ARGS, is_null: *mut std::os::raw::c_char, error: *mut std::os::raw::c_char) -> std::os::raw::c_longlong {
-			writeln!(&debug_file(), "argcount");
-			let args = unsafe { &mut *args };
-			let initid: &mut UDF_INIT = unsafe { &mut *initid };
-			writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
-			let udf = unsafe { &mut *(initid.ptr as *mut $ty) };
-			match udf.process_row(args.row_args_iter_mut()) {
-				Err(_) => {
-					unsafe { *error = 1 };
-					0
-				}
-				Ok(result) => {
-					result
-				}
-			}
+		pub extern "C" fn init(initid: *mut UDF_INIT, mut args: *mut UDF_ARGS, msg: *mut c_char) -> my_bool {
+			super::init::<$ty>(initid, args, msg)
 		}
 	}
-
 }
 
 macro_rules! create_deinit_fn {
@@ -249,25 +289,54 @@ macro_rules! create_deinit_fn {
 		#[no_mangle]
 		#[export_name = $name]
 		pub extern "C" fn deinit(initid: *mut UDF_INIT) {
-			writeln!(&debug_file(), "argcount_deinit");
-			let initid: &mut UDF_INIT = unsafe {&mut *initid};
-			writeln!(&debug_file(), "initid.ptr == {:?}", initid.ptr);
-			let owned = unsafe { Box::from_raw(initid.ptr as *mut $ty); };
-			writeln!(&debug_file(), "owned: {:?}", owned);
+			super::deinit::<$ty>(initid)
 		}
 	}
 }
 
-macro_rules! create_udf {
+macro_rules! create_process_row_fn_returning_int {
+	($name:expr, $ty:ty) => {
+		#[no_mangle]
+		#[export_name = $name]
+		pub extern "C" fn process_row(initid: *mut UDF_INIT, args: *mut UDF_ARGS, is_null: *mut c_char, error: *mut c_char) -> c_longlong {
+			super::process_row_primitive_return::<$ty, c_longlong>(initid, args, is_null, error)
+		}
+	}
+}
+
+macro_rules! create_process_row_fn_returning_double {
+	($name:expr, $ty:ty) => {
+		#[no_mangle]
+		#[export_name = $name]
+		pub extern "C" fn process_row(initid: *mut UDF_INIT, args: *mut UDF_ARGS, is_null: *mut c_char, error: *mut c_char) -> c_double {
+			super::process_row_primitive_return::<$ty, c_double>(initid, args, is_null, error)
+		}
+	}
+}
+
+
+macro_rules! create_udf_returning_int {
 	($name:ident, $ty:ty) => {
 		pub mod $name {
 			use super::*;
 			create_init_fn!(concat!(stringify!($name), "_init"), $ty);
-			create_process_row_fn!(stringify!($name), $ty);
+			create_process_row_fn_returning_int!(stringify!($name), $ty);
 			create_deinit_fn!(concat!(stringify!($name), "_deinit"), $ty);
 		}
 	}
 }
 
-create_udf!(argcount, ArgCount);
-create_udf!(my_add, Add);
+macro_rules! create_udf_returning_double {
+	($name:ident, $ty:ty) => {
+		pub mod $name {
+			use super::*;
+			create_init_fn!(concat!(stringify!($name), "_init"), $ty);
+			create_process_row_fn_returning_double!(stringify!($name), $ty);
+			create_deinit_fn!(concat!(stringify!($name), "_deinit"), $ty);
+		}
+	}
+}
+
+create_udf_returning_int!(argcount, ArgCount);
+create_udf_returning_int!(my_add, Add);
+create_udf_returning_double!(my_addf, AddF);
