@@ -71,7 +71,7 @@ fn create_init_and_deinit(name: &Ident, typ: &Type) -> TokenStream {
             args: *mut ::mysql_udf::UDF_ARGS,
             msg: *mut ::std::os::raw::c_char
         ) -> ::mysql_udf::my_bool {
-            unsafe { ::mysql_udf::init::<#typ, _>(initid, args, msg) }
+            unsafe { ::mysql_udf::init::<#typ>(initid, args, msg) }
         }
 
         #[no_mangle]

@@ -6,7 +6,7 @@ use mysql_udf::{
 use std::os::raw::{c_double, c_longlong};
 
 struct ArgCount;
-impl Udf<c_longlong> for ArgCount {
+impl Udf for ArgCount {
     type Output = c_longlong;
 
     fn new(_init: &mut UdfInit, _init_args: InitUdfArgsIter) -> Result<Self, String> {
@@ -19,7 +19,7 @@ impl Udf<c_longlong> for ArgCount {
 }
 
 struct Add;
-impl Udf<c_longlong> for Add {
+impl Udf for Add {
     type Output = c_longlong;
 
     fn new(_init: &mut UdfInit, init_args: InitUdfArgsIter) -> Result<Self, String> {
@@ -50,7 +50,7 @@ impl Udf<c_longlong> for Add {
 }
 
 struct AddF;
-impl Udf<c_double> for AddF {
+impl Udf for AddF {
     type Output = c_double;
     fn new(_init: &mut UdfInit, init_args: InitUdfArgsIter) -> Result<Self, String> {
         for (idx, arg) in init_args.enumerate() {

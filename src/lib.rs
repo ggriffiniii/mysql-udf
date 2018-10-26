@@ -149,13 +149,15 @@ impl<'a> ArgValue<'a> {
 	}
 }
 
-pub trait UdfOutput<T> {
+pub trait UdfOutput {
+	type Output;
 	fn nullable() -> bool;
 	fn is_null(&self) -> bool;
-	fn output(self) -> T;
+	fn output(self) -> Self::Output;
 }
 
-impl UdfOutput<c_longlong> for c_longlong {
+impl UdfOutput for c_longlong {
+	type Output = c_longlong;
 	fn nullable() -> bool {
 		false
 	}
@@ -167,7 +169,8 @@ impl UdfOutput<c_longlong> for c_longlong {
 	}
 }
 
-impl UdfOutput<c_longlong> for Option<c_longlong> {
+impl UdfOutput for Option<c_longlong> {
+	type Output = c_longlong;
 	fn nullable() -> bool {
 		true
 	}
@@ -179,7 +182,8 @@ impl UdfOutput<c_longlong> for Option<c_longlong> {
 	}
 }
 
-impl UdfOutput<c_double> for c_double {
+impl UdfOutput for c_double {
+	type Output = c_double;
 	fn nullable() -> bool {
 		false
 	}
@@ -191,7 +195,8 @@ impl UdfOutput<c_double> for c_double {
 	}
 }
 
-impl UdfOutput<c_double> for Option<c_double> {
+impl UdfOutput for Option<c_double> {
+	type Output = c_double;
 	fn nullable() -> bool {
 		true
 	}
@@ -203,19 +208,19 @@ impl UdfOutput<c_double> for Option<c_double> {
 	}
 }
 
-pub trait Udf<T>: Send + Sync + Sized {
-	type Output: UdfOutput<T>;
+pub trait Udf: Send + Sync + Sized {
+	type Output: UdfOutput;
 	fn new(init: &mut UdfInit, init_args: InitUdfArgsIter) -> Result<Self, String>;
 	fn process_row(&self, args: RowUdfArgsIter) -> Result<Self::Output, ()>;
 }
 
-pub unsafe fn init<U, R>(initid: *mut UDF_INIT, args: *mut UDF_ARGS, msg: *mut c_char) -> my_bool
+pub unsafe fn init<U>(initid: *mut UDF_INIT, args: *mut UDF_ARGS, msg: *mut c_char) -> my_bool
 where
-	U: Udf<R>,
+	U: Udf,
 {
 	let initid: &mut UDF_INIT = &mut *initid;
 	let args = &mut *args;
-	match safe_init::<U, R>(initid, args) {
+	match safe_init::<U>(initid, args) {
 		Err(err_msg) => {
 			let len = ::std::cmp::min(MYSQL_ERRMSG_SIZE as usize, err_msg.len());
 			let err_msg = ::std::ffi::CString::new(&err_msg[..len]).or_else(|_| ::std::ffi::CString::new("unknown error")).unwrap();
@@ -226,9 +231,9 @@ where
 	}
 }
 
-fn safe_init<U, R>(initid: &mut UDF_INIT, args: &mut UDF_ARGS) -> Result<(), String>
+fn safe_init<U>(initid: &mut UDF_INIT, args: &mut UDF_ARGS) -> Result<(), String>
 where
-	U: Udf<R>,
+	U: Udf,
 {
 	let args_iter = args.init_args_iter_mut();
 	let udf = {
@@ -247,10 +252,11 @@ pub unsafe fn process_row<U, R>(
 	args: *mut UDF_ARGS,
 	is_null: *mut c_char,
 	error: *mut c_char,
-) -> R
+) -> R::Output
 where
-	U: Udf<R>,
-	R: Default,
+	U: Udf<Output=R>,
+	R: UdfOutput,
+	R::Output: Default,
 {
 	let args = &mut *args;
 	let initid: &mut UDF_INIT = &mut *initid;
