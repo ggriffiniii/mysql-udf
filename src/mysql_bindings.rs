@@ -4,9 +4,9 @@ pub type my_bool = ::std::os::raw::c_char;
 pub const Item_result_STRING_RESULT: Item_result = 0;
 pub const Item_result_REAL_RESULT: Item_result = 1;
 pub const Item_result_INT_RESULT: Item_result = 2;
-pub const Item_result_ROW_RESULT: Item_result = 3;
 pub const Item_result_DECIMAL_RESULT: Item_result = 4;
 pub type Item_result = u32;
+pub const MYSQL_ERRMSG_SIZE: ::std::os::raw::c_uint = 512;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct st_udf_args {

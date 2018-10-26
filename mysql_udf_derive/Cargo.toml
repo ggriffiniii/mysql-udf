@@ -1,0 +1,13 @@
+[package]
+name = "mysql_udf_derive"
+version = "0.1.0"
+authors = ["Glenn Griffin <ggriffiniii@gmail.com>"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "0.4.20"
+syn = "0.15.13"
+quote = "0.6.8"
+
